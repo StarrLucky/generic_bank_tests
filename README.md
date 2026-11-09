@@ -54,8 +54,11 @@ scripts/
 
 | Command | What it does |
 |---|---|
+| `make check` | everything CI runs: lint + secret scan |
 | `make test` | run pytest |
 | `make lint` | `ruff check` + `ruff format --check` |
+| `make secrets` | scan tracked files for committed secrets |
+| `make secrets-baseline` | refresh `.secrets.baseline` after triaging findings |
 | `make fmt` | autofix and format |
 | `make hooks` | enable the pre-commit hook (`core.hooksPath .githooks`) |
 
@@ -65,9 +68,12 @@ Run by marker: `.venv/bin/pytest -m chaos`. Playwright traces:
 ## Code quality
 
 Linter is [ruff](https://docs.astral.sh/ruff/), configured in `ruff.toml` (line-length 120,
-strict rule set: pytest-style, bandit, annotations, docstrings, pathlib). Enforced in three places:
+strict rule set: pytest-style, bandit, annotations, docstrings, pathlib). Secret scanning is
+[detect-secrets](https://github.com/Yelp/detect-secrets) against `.secrets.baseline`; mark a false
+positive with a trailing `# pragma: allowlist secret`, or re-run `make secrets-baseline`.
+Both run via `make check` and are enforced in three places:
 
-- locally — `make lint`
+- locally — `make check`
 - on commit — the `.githooks/pre-commit` hook (one-time setup: `make hooks`)
 - in CI — GitHub Actions on every PR into `main`
 
