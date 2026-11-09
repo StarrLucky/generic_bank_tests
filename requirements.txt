@@ -15,3 +15,6 @@ opentelemetry-propagator-gcp>=1.11
 opentelemetry-instrumentation-flask>=0.60b1
 opentelemetry-instrumentation-jinja2>=0.60b1
 opentelemetry-instrumentation-requests>=0.60b1
+
+# lint
+ruff>=0.14

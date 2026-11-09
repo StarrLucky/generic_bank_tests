@@ -1,5 +1,7 @@
 """Where the system under test lives. Override any value with an env var."""
+
 import os
+from pathlib import Path
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:8080")
 USERSERVICE_URL = os.getenv("USERSERVICE_URL", "http://localhost:8081")
@@ -21,5 +23,5 @@ EXTERNAL_ACCOUNT_NUM = "9099791699"
 # path to the Bank of Anthos checkout (component tests import the frontend from it)
 BOA_REPO = os.getenv(
     "BOA_REPO",
-    os.path.join(os.path.dirname(__file__), "..", "..", "bank-of-anthos"),
+    str(Path(__file__).parent.parent.parent / "bank-of-anthos"),
 )
