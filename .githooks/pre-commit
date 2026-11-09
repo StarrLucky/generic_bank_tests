@@ -1,5 +1,2 @@
 #!/bin/sh
-set -e
-RUFF=$(command -v ruff || echo .venv/bin/ruff)
-"$RUFF" check .
-"$RUFF" format --check .
+exec make lint
