@@ -18,3 +18,4 @@ opentelemetry-instrumentation-requests>=0.60b1
 
 # lint
 ruff>=0.14
+detect-secrets>=1.5

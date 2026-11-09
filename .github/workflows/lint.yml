@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 jobs:
-  ruff:
+  check:
     runs-on: ubuntu-latest
     env:
       RUFF_OUTPUT_FORMAT: github
@@ -14,5 +14,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install 'ruff>=0.14'
-      - run: make lint
+      - run: pip install 'ruff>=0.14' 'detect-secrets>=1.5'
+      - run: make check
