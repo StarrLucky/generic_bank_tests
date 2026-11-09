@@ -16,7 +16,7 @@ SERVICES = {
 
 
 @pytest.mark.parametrize("name", SERVICES)
-def test_service_is_ready(name):
+def test_service_is_ready(name: str) -> None:
     try:
         resp = httpx.get(f"{SERVICES[name]}/ready", timeout=5)
     except httpx.ConnectError:
