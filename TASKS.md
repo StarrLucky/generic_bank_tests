@@ -1,99 +1,136 @@
-# Задания: Bank of Anthos QA
+# Tasks: Bank of Anthos QA
 
-Тесты пишешь сам. Ветка `solutions` — мои варианты: открывай, только если застрял (`git diff main solutions -- tests/api`).
+You write the tests yourself. The `solutions` branch holds my versions — open it only if you're
+stuck (`git diff main solutions -- tests/api`).
 
-## 0. Подготовка
+## 0. Setup
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/playwright install chromium
-./scripts/port-forward.sh          # отдельное окно терминала, держать открытым
+./scripts/port-forward.sh          # separate terminal, keep it open
 .venv/bin/pytest tests/test_smoke.py
 ```
 
-| Порт | Сервис | Что делает |
+| Port | Service | What it does |
 |---|---|---|
-| 8080 | frontend | Flask, HTML-страницы, ходит в бэкенды со своей стороны |
+| 8080 | frontend | Flask, HTML pages, calls the backends server-side |
 | 8081 | userservice | `POST /users` (form), `GET /login?username=&password=` → `{"token"}` |
-| 8082 | contacts | `GET/POST /contacts/<username>` (JSON, нужен Bearer) |
+| 8082 | contacts | `GET/POST /contacts/<username>` (JSON, Bearer required) |
 | 8083 | ledgerwriter | `POST /transactions` (JSON, Bearer) → 201 |
-| 8084 | balancereader | `GET /balances/<account>` → число в **центах** |
-| 8085 | transactionhistory | `GET /transactions/<account>` → список |
+| 8084 | balancereader | `GET /balances/<account>` → amount in **cents** |
+| 8085 | transactionhistory | `GET /transactions/<account>` → list |
 
-Исходники для подсказок: `../bank-of-anthos/src/`. Демо-юзер: `testuser` / `bankofanthos`, local routing `883745000`.
+Sources to peek at when stuck: `../bank-of-anthos/src/`. Demo user: `testuser` / `bankofanthos`,
+local routing number `883745000`.
 
-Смотреть, что происходит внутри, пока тест бежит:
+Watch what happens inside while a test runs:
 ```bash
 kubectl logs -f deploy/ledgerwriter
 ```
 
 ---
 
-## 1. Фундамент (сделай до остального)
+## 1. Foundation (do this before anything else)
 
-1. **API-клиент.** Класс с методами на каждый эндпоинт, возвращает сырой `httpx.Response`. Почему сырой, а не `.json()` — подумай.
-2. **Фикстуры в `conftest.py`:** `api` (scope=session), `demo_user`, фабрика `make_user` (каждый вызов — новый юзер с уникальным именем), `funded_user` (новый юзер + депозит $100).
-   - Подсказка: деньги новому юзеру можно завести только «из другого банка» — `fromRoutingNum` ≠ local, тогда ledgerwriter не проверяет баланс отправителя.
-   - Ловушка: если `funded_user` построен поверх `new_user`, то в тесте с обоими это **один и тот же** юзер.
-3. **Хелпер `wait_until(probe, condition, timeout)`.** Без него тесты будут флаки — см. задание 2.4.
+1. **API client.** A class with a method per endpoint, returning the raw `httpx.Response`. Why raw
+   and not `.json()` — think it through.
+2. **Fixtures in `conftest.py`:** `api` (scope=session), `demo_user`, a `make_user` factory (every
+   call creates a new user with a unique name), `funded_user` (new user + a $100 deposit).
+   - Hint: the only way to fund a new user is "from another bank" — `fromRoutingNum` ≠ local, in
+     which case ledgerwriter doesn't check the sender's balance.
+   - Trap: if `funded_user` is built on top of `new_user`, then a test using both gets **the same**
+     user twice.
+3. **A `wait_until(probe, condition, timeout)` helper.** Without it the tests will be flaky — see
+   task 2.4.
 
-## 2. API-интеграционные (`tests/api/`)
+## 2. API integration tests (`tests/api/`)
 
 **Auth**
-- 2.1 Логин отдаёт JWT. Проверь алгоритм (header), claims `user`, `acct`, `exp > iat`.
-- 2.2 Неверный пароль, несуществующий юзер — какие коды? Сначала угадай, потом проверь в `userservice.py`.
-- 2.3 Регистрация: дубликат, валидация username (параметризуй: короткий, длинный, пробел, спецсимволы), пароли не совпадают, пустое поле.
-- 2.5 Чужой токен: запроси баланс чужого счёта. Подделай токен (поменяй `acct` в payload, подпись оставь старую).
+- 2.1 Login returns a JWT. Check the algorithm (header) and the `user`, `acct`, `exp > iat` claims.
+- 2.2 Wrong password, non-existent user — which status codes? Guess first, then check
+  `userservice.py`.
+- 2.3 Registration: duplicate, username validation (parametrize: too short, too long, space,
+  special characters), passwords don't match, empty field.
+- 2.5 Someone else's token: request another account's balance. Forge a token (change `acct` in the
+  payload, leave the old signature).
 
-**Переводы — главное по домену**
-- 2.4 Депозит → баланс вырос. Запусти без `wait_until` 10 раз (`pytest --count` или цикл). Почему иногда падает? (`balancereader` читает базу по таймеру — eventual consistency.)
-- 2.6 Перевод A→B: баланс A уменьшился, B вырос **ровно** на сумму, транзакция видна в истории обоих.
-- 2.7 **Идемпотентность:** тот же `uuid` дважды. Что вернётся? Сколько денег списалось? Почему это критично для банка (ретраи сети)?
-- 2.8 Недостаточно средств; перевод ровно всего баланса; на 1 цент больше баланса.
-- 2.9 Сумма 0, отрицательная. Перевод самому себе. Списание с чужого счёта своим токеном.
-- 2.10 Битые номера счёта/routing (длина, буквы) — параметризуй.
-- 2.11 ⭐ Гонка: два параллельных перевода по $60 с баланса $100 (`ThreadPoolExecutor`). Сколько пройдёт? Какой итоговый баланс? Если уйдёт в минус — ты нашёл реальный баг (check-then-write без блокировки). Объясни по коду `LedgerWriterController`.
+**Transfers — the core of the domain**
+- 2.4 Deposit → balance goes up. Run it 10 times without `wait_until` (`pytest --count` or a loop).
+  Why does it sometimes fail? (`balancereader` polls the database on a timer — eventual
+  consistency.)
+- 2.6 Transfer A→B: A's balance goes down, B's goes up by **exactly** the amount, and the
+  transaction shows up in both histories.
+- 2.7 **Idempotency:** the same `uuid` twice. What comes back? How much money was debited? Why does
+  this matter for a bank (network retries)?
+- 2.8 Insufficient funds; a transfer of exactly the whole balance; one cent more than the balance.
+- 2.9 Amount of 0, negative amount. Transfer to yourself. Debiting someone else's account with your
+  own token.
+- 2.10 Malformed account/routing numbers (length, letters) — parametrize.
+- 2.11 ⭐ Race: two parallel $60 transfers out of a $100 balance (`ThreadPoolExecutor`). How many go
+  through? What's the final balance? If it goes negative, you've found a real bug (check-then-write
+  with no locking). Explain it from the `LedgerWriterController` code.
 
 **Contacts**
-- 2.12 Добавить внутренний и внешний контакт, дубликат лейбла, валидация, чужие контакты.
+- 2.12 Add an internal and an external contact, duplicate label, validation, other users' contacts.
 
-## 3. Компонентные тесты фронта с моками (`tests/component/`)
+## 3. Component tests of the frontend with mocks (`tests/component/`)
 
-Поднимаешь Flask-фронт **прямо в pytest** без кластера, а все его HTTP-вызовы в бэкенды мокаешь библиотекой `responses`.
+You run the Flask frontend **inside pytest** with no cluster, and mock all of its HTTP calls to the
+backends with the `responses` library.
 
-- 3.1 Фикстура `app`: добавь `../bank-of-anthos/src/frontend` в `sys.path`, выставь env (`*_API_ADDR`, `PUB_KEY_PATH`, `LOCAL_ROUTING_NUM`, `ENABLE_TRACING=false`), вызови `create_app()`.
-  - Сгенерируй свою пару RSA-ключей (`cryptography`), публичный положи в файл для `PUB_KEY_PATH`, приватным подписывай токены сам — так ты управляешь «кто залогинен».
-- 3.2 `/home`: замокай balances/history/contacts, проверь, что сумма `12345` центов рендерится как `$123.45`, отрицательная — с минусом.
-- 3.3 balancereader вернул 500 → на странице `$---`, страница не упала.
-- 3.4 `POST /payment` с суммой `"10.10"`: через `responses.calls` проверь, что в ledgerwriter ушло `amount: 1010` (int). Попробуй `"0.1"`, `"1e2"`, `"abc"`, `"10.999"` — что уходит? Есть ли баг с округлением?
-- 3.5 ledgerwriter ответил 400 `insufficient balance` → редирект на `/home?msg=Payment failed: insufficient balance`.
-- 3.6 Таймаут бэкенда (`responses` умеет кидать исключение как `body`).
+- 3.1 An `app` fixture: add `../bank-of-anthos/src/frontend` to `sys.path`, set the env vars
+  (`*_API_ADDR`, `PUB_KEY_PATH`, `LOCAL_ROUTING_NUM`, `ENABLE_TRACING=false`), call `create_app()`.
+  - Generate your own RSA key pair (`cryptography`), write the public key to the file for
+    `PUB_KEY_PATH`, and sign tokens yourself with the private one — that's how you control "who is
+    logged in".
+- 3.2 `/home`: mock balances/history/contacts, check that `12345` cents renders as `$123.45`, and
+  that a negative amount renders with a minus sign.
+- 3.3 balancereader returned 500 → the page shows `$---` and doesn't blow up.
+- 3.4 `POST /payment` with an amount of `"10.10"`: via `responses.calls`, check that ledgerwriter
+  received `amount: 1010` (int). Try `"0.1"`, `"1e2"`, `"abc"`, `"10.999"` — what gets sent? Is
+  there a rounding bug?
+- 3.5 ledgerwriter answered 400 `insufficient balance` → redirect to
+  `/home?msg=Payment failed: insufficient balance`.
+- 3.6 Backend timeout (`responses` can raise an exception as the `body`).
 
-## 4. Хаос: подмена одного живого сервиса на WireMock (`tests/chaos/`)
+## 4. Chaos: swapping one live service for WireMock (`tests/chaos/`)
 
-Цель: весь кластер настоящий, кроме одного сервиса, которым ты управляешь из теста.
+The goal: the whole cluster is real except for one service, which you drive from the test.
 
-- 4.1 Задеплой `wiremock/wiremock` в кластер (Deployment + Service, порт 8080). Образ multi-arch, на arm64 пойдёт нативно.
-- 4.2 Сделай в WireMock маппинг с низким приоритетом: проксировать всё в `http://balancereader:8080` (`proxyBaseUrl`). Теперь WireMock прозрачен.
-- 4.3 Переключи фронт: `kubectl set env deploy/frontend BALANCES_API_ADDR=wiremock:8080`. Проверь, что UI работает как раньше.
-- 4.4 Фикстура: перед тестом `POST /__admin/mappings` (порт 8086), после — `POST /__admin/reset`. Тесты: баланс 500, задержка 10с (`fixedDelayMilliseconds`) при `BACKEND_TIMEOUT=4`, странный ответ (строка вместо числа).
-- 4.5 Через `GET /__admin/requests` проверь, какие запросы реально пришли от фронта (заголовок Authorization есть?).
-- Вопрос: ledgerwriter тоже ходит в balancereader перед списанием. Влияет ли на него твоя подмена? Почему?
+- 4.1 Deploy `wiremock/wiremock` into the cluster (Deployment + Service, port 8080). The image is
+  multi-arch, so it runs natively on arm64.
+- 4.2 Add a low-priority WireMock mapping that proxies everything to
+  `http://balancereader:8080` (`proxyBaseUrl`). WireMock is now transparent.
+- 4.3 Point the frontend at it: `kubectl set env deploy/frontend BALANCES_API_ADDR=wiremock:8080`.
+  Check the UI still works as before.
+- 4.4 A fixture: `POST /__admin/mappings` before the test (port 8086), `POST /__admin/reset` after.
+  Tests: a balance of 500; a 10s delay (`fixedDelayMilliseconds`) against `BACKEND_TIMEOUT=4`; a
+  weird response (a string instead of a number).
+- 4.5 Use `GET /__admin/requests` to check which requests the frontend actually sent (is the
+  Authorization header there?).
+- Question: ledgerwriter also calls balancereader before debiting. Does your swap affect it? Why?
 
 ## 5. Playwright UI (`tests/ui/`)
 
-- 5.1 Page Objects: `LoginPage`, `HomePage` (селекторы: `#login-username`, `#current-balance`, `#transaction-list`, модалки `#sendPayment`, `#depositFunds`).
-- 5.2 Логин демо-юзером → видна Home, имя в шапке. Логаут.
-- 5.3 Регистрация через UI → попал на Home с балансом `$0.00`.
-- 5.4 Пополнение с нового внешнего счёта → сообщение `Deposit successful`, баланс вырос, строка в истории.
-- 5.5 Перевод новому получателю → контакт появился в выпадающем списке.
-- 5.6 Ошибки: перевод больше баланса (что делает HTML-атрибут `max` и как его обойти, чтобы проверить бэкенд?), неверный пароль.
-- 5.7 Фикстура `logged_in_page`: логинься через API (`/login` → cookie `token`) и ставь cookie в `context.add_cookies` — тест не тратит время на UI-логин.
-- 5.8 `page.route()`: замокай `POST /payment` так, чтобы вернулся редирект с ошибкой. Почему этим **нельзя** подменить ответ balancereader? (подсказка: кто ходит в бэкенд — браузер или Flask?)
-- 5.9 Включи трейсы: `pytest --tracing retain-on-failure`, открой `playwright show-trace`.
+- 5.1 Page objects: `LoginPage`, `HomePage` (selectors: `#login-username`, `#current-balance`,
+  `#transaction-list`, the `#sendPayment` and `#depositFunds` modals).
+- 5.2 Log in as the demo user → Home is visible, the name is in the header. Log out.
+- 5.3 Register through the UI → you land on Home with a balance of `$0.00`.
+- 5.4 Deposit from a new external account → a `Deposit successful` message, the balance goes up, a
+  row appears in the history.
+- 5.5 Transfer to a new recipient → the contact appears in the dropdown.
+- 5.6 Errors: a transfer larger than the balance (what does the `max` HTML attribute do, and how do
+  you get around it to test the backend?), wrong password.
+- 5.7 A `logged_in_page` fixture: log in via the API (`/login` → `token` cookie) and set the cookie
+  with `context.add_cookies` — the test doesn't waste time on a UI login.
+- 5.8 `page.route()`: mock `POST /payment` so it returns a redirect with an error. Why can you
+  **not** swap out the balancereader response this way? (hint: who calls the backend — the browser
+  or Flask?)
+- 5.9 Turn on traces: `pytest --tracing retain-on-failure`, open with `playwright show-trace`.
 
-## 6. Бонус
-- Маркеры `api`/`ui`/`chaos`, запуск по маркеру.
-- `pytest-xdist` — параллельный прогон. Что сломается, если фикстуры делят юзеров?
-- Allure-отчёт.
-- GitHub Actions: kind в CI + прогон.
+## 6. Bonus
+- `api`/`ui`/`chaos` markers, running by marker.
+- `pytest-xdist` — a parallel run. What breaks if fixtures share users?
+- An Allure report.
+- GitHub Actions: kind in CI plus a test run.
