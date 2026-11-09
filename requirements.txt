@@ -1,0 +1,17 @@
+# test tooling
+pytest>=8.3
+pytest-playwright>=0.7
+httpx>=0.28
+responses>=0.25
+pyjwt[crypto]>=2.10
+
+# runtime deps of the Bank of Anthos frontend (needed only for tests/component)
+flask>=3.1
+requests>=2.32
+gunicorn>=23.0
+opentelemetry-sdk>=1.39
+opentelemetry-exporter-gcp-trace>=1.11
+opentelemetry-propagator-gcp>=1.11
+opentelemetry-instrumentation-flask>=0.60b1
+opentelemetry-instrumentation-jinja2>=0.60b1
+opentelemetry-instrumentation-requests>=0.60b1
