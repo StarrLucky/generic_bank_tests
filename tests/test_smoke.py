@@ -1,4 +1,5 @@
 """Smoke: is everything reachable? Run this first. The real tests are yours to write (see TASKS.md)."""
+
 import httpx
 import pytest
 

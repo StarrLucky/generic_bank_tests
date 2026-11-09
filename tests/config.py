@@ -1,4 +1,5 @@
 """Where the system under test lives. Override any value with an env var."""
+
 import os
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:8080")
