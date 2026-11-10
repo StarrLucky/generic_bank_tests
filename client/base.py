@@ -5,6 +5,8 @@ from typing import Any, Self
 
 import httpx
 
+from client.models import Auth, User
+
 
 class BaseClient:
     """Thin wrapper over httpx.Client bound to one service.
@@ -24,11 +26,24 @@ class BaseClient:
         self.http = httpx.Client(base_url=self.base_url, timeout=timeout)
 
     @staticmethod
-    def auth(token: str | None) -> dict[str, str]:
-        """Build the Authorization header; empty when token is None (for negative tests)."""
+    def auth(token: Auth) -> dict[str, str]:
+        """Build the Authorization header from a ``User`` or a raw JWT; empty when None."""
+        if isinstance(token, User):
+            token = token.token
         return {"Authorization": f"Bearer {token}"} if token else {}
 
-    def request(self, method: str, path: str, token: str | None = None, **kwargs: Any) -> httpx.Response:
+    @staticmethod
+    def resolve(target: str | User, token: Auth, attr: str) -> tuple[str, Auth]:
+        """Unpack an identifier that may be a ``User``.
+
+        Passing a ``User`` as the account/username means "that user, with their own token",
+        unless an explicit token is given (how you test cross-user access).
+        """
+        if isinstance(target, User):
+            return getattr(target, attr), target if token is None else token
+        return target, token
+
+    def request(self, method: str, path: str, token: Auth = None, **kwargs: Any) -> httpx.Response:
         """Send a request, adding the bearer token if given."""
         headers = {**self.auth(token), **kwargs.pop("headers", {})}
         return self.http.request(method, path, headers=headers, **kwargs)

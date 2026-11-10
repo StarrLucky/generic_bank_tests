@@ -7,8 +7,9 @@ from typing import Self
 from client.balancereader import BalanceReaderClient
 from client.contacts import ContactsClient
 from client.ledgerwriter import LedgerWriterClient
+from client.models import User
 from client.transactionhistory import TransactionHistoryClient
-from client.userservice import UserServiceClient
+from client.userservice import DEFAULT_PASSWORD, UserServiceClient
 
 
 class BankApi:
@@ -24,6 +25,10 @@ class BankApi:
         self.ledger = LedgerWriterClient(os.getenv("LEDGERWRITER_URL", "http://localhost:8083"), timeout)
         self.balances = BalanceReaderClient(os.getenv("BALANCEREADER_URL", "http://localhost:8084"), timeout)
         self.history = TransactionHistoryClient(os.getenv("HISTORY_URL", "http://localhost:8085"), timeout)
+
+    def new_user(self, username: str | None = None, password: str = DEFAULT_PASSWORD, **overrides: str) -> User:
+        """Register a user and log them in - ``bank.users.register`` under a shorter name."""
+        return self.users.register(username, password, **overrides)
 
     def close(self) -> None:
         """Close every client."""
