@@ -1,7 +1,9 @@
 RUFF := $(shell command -v ruff || echo .venv/bin/ruff)
 SECRETS := $(shell command -v detect-secrets-hook || echo .venv/bin/detect-secrets-hook)
+RUFF_OUTPUT_FORMAT ?= concise
+export RUFF_OUTPUT_FORMAT
 
-.PHONY: check lint secrets secrets-baseline fmt test hooks
+.PHONY: check lint lint_fix fmt secrets secrets-baseline test hooks
 
 check: lint secrets
 
@@ -15,9 +17,11 @@ secrets:
 secrets-baseline:
 	detect-secrets scan --baseline .secrets.baseline --exclude-files '^\.venv/'  # pragma: allowlist secret
 
-fmt:
-	$(RUFF) check --fix .
+lint_fix:
+	$(RUFF) check --fix --unsafe-fixes --exit-zero .
 	$(RUFF) format .
+
+fmt: lint_fix
 
 test:
 	.venv/bin/pytest
